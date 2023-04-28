@@ -32,3 +32,17 @@ class DatasetAccessor:
             ),
             index=False,
         )
+
+    def write_polygons(self, shp_db, data:List[shapely.Polygon], new_file_path:str) -> None:
+        lines = []
+        for polygon in data:
+            line = shapely.LineString(polygon.boundary)
+            lines.append(line)
+        gpd.GeoDataFrame(
+            geometry=lines, crs=shp_db.crs
+        ).to_file(
+            Path(
+            f"{self.dataset_folder}/{new_file_path}"
+            ),
+            index=False,
+        )
