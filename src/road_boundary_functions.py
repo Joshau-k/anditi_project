@@ -17,7 +17,7 @@ def find_line_gaps(lines: List[LineString]) -> List[LineString]:
 
     return gaps
 
-def find_excessive_curves(lines: List[LineString]) -> List[Polygon]:
+def find_curves(lines: List[LineString], min_angle_degrees=10) -> List[List['RoadCurve']]:
     '''
         1.coordinate_scale 
         2.How to measure curviness
@@ -27,16 +27,16 @@ def find_excessive_curves(lines: List[LineString]) -> List[Polygon]:
         4. What format to return result
     '''
 
-    min_angle_degrees = 10
-
     # problem_regions:List[Polygon] = []
-    all_curves:List[RoadCurve] = []
+    all_lines_curves:List[List[RoadCurve]] = []
 
-    current_curve:RoadCurve = None
 
     point1 = None
     point2 = None
     for line in lines:
+        line_curves:List[RoadCurve] = []
+        current_curve:RoadCurve = None
+
         for point3 in line.coords:
             try:
                 if point1 is None or point2 is None or point3 is None:
@@ -52,7 +52,7 @@ def find_excessive_curves(lines: List[LineString]) -> List[Polygon]:
                 if change_degrees > min_angle_degrees:
                     if current_curve is None:
                         current_curve = RoadCurve([point1, point2, point3])
-                        all_curves.append(current_curve)
+                        line_curves.append(current_curve)
                     else:
                         if current_curve.does_point_fit_curve(point3, min_angle_degrees):
                             #Extend existing curve
@@ -60,7 +60,7 @@ def find_excessive_curves(lines: List[LineString]) -> List[Polygon]:
                         else:
                             #Start new curve
                             current_curve = RoadCurve([point1, point2, point3])
-                            all_curves.append(current_curve)
+                            line_curves.append(current_curve)
                 else:
                     current_curve = None
 
@@ -72,60 +72,98 @@ def find_excessive_curves(lines: List[LineString]) -> List[Polygon]:
                 point2 = point3
         point1 = None
         point2 = None
+        if line_curves:
+            all_lines_curves.append(line_curves)
 
-    return all_curves
+    return all_lines_curves
+
+def find_pos_neg_neg_pos_curve_sequence(road_curves : List[List['RoadCurve']], max_distance:float) -> List[Polygon]:
+    """
+        Find a sequence of 4 curves with angle in the pattern:
+            - positive, negative, negative, positive
+            or
+            - negative, positive, positive, negative
+    """
+    
+    problem_regions: List[Polygon] = []
+    for line_curves in road_curves:
+        if len(line_curves) >=3:
+            curve1 = line_curves[0]
+            curve2 = line_curves[1]
+            curve3 = line_curves[2]
+        for curve4 in line_curves[3:]:
+            try:
+                if distance(curve1.to_polygon(), curve4.to_polygon()) > max_distance:
+                    continue
+                if (
+                    (curve1.net_angle() > 0 and curve2.net_angle() < 0 and curve3.net_angle() < 0 and curve4.net_angle() > 0)
+                    or (curve1.net_angle() < 0 and curve2.net_angle() > 0 and curve3.net_angle() > 0 and curve4.net_angle() < 0)
+                ):
+                    combined_polygon = combine_polygons(curve1.to_polygon(), curve2.to_polygon(), curve3.to_polygon(), curve4.to_polygon())
+                    problem_regions.append(combined_polygon)
+            except Exception as ex:
+                raise ex
+            finally:
+                curve1 = curve2
+                curve2 = curve3
+                curve3 = curve4
+
+    return problem_regions
 
 def find_nearby_opposite_angle_curves(road_curves : List['RoadCurve'], max_distance:float) -> List[Polygon]:
     problem_regions: List[Polygon] = []
-    prev_curve = road_curves[0]
-    for current_curve in road_curves[1:]:
-        try:
-            if distance(prev_curve.to_polygon(), current_curve.to_polygon()) > max_distance:
-                continue
-            if (prev_curve.net_angle() > 0 and current_curve.net_angle() < 0) or (prev_curve.net_angle() < 0 and current_curve.net_angle() > 0):
-                combined_polygon = combine_polygons(prev_curve.to_polygon(), current_curve.to_polygon())
-                problem_regions.append(combined_polygon)
-        except Exception as ex:
-            raise ex
-        finally:
-            prev_curve = current_curve
+    for line_curves in road_curves:
+        prev_curve = line_curves[0]
+        for current_curve in line_curves[1:]:
+            try:
+                if distance(prev_curve.to_polygon(), current_curve.to_polygon()) > max_distance:
+                    continue
+                if (prev_curve.net_angle() > 0 and current_curve.net_angle() < 0) or (prev_curve.net_angle() < 0 and current_curve.net_angle() > 0):
+                    combined_polygon = combine_polygons(prev_curve.to_polygon(), current_curve.to_polygon())
+                    problem_regions.append(combined_polygon)
+            except Exception as ex:
+                raise ex
+            finally:
+                prev_curve = current_curve
 
     return problem_regions
 
 def find_nearby_same_angle_curves(road_curves : List['RoadCurve'], max_distance:float) -> List[Polygon]:
     problem_regions: List[Polygon] = []
-    prev_curve = road_curves[0]
-    for current_curve in road_curves[1:]:
-        try:
-            if distance(prev_curve.to_polygon(), current_curve.to_polygon()) > max_distance:
-                continue
-            if (prev_curve.net_angle() > 0 and current_curve.net_angle() > 0) or (prev_curve.net_angle() < 0 and current_curve.net_angle() < 0):
-                combined_polygon = combine_polygons(prev_curve.to_polygon(), current_curve.to_polygon())
-                problem_regions.append(combined_polygon)
+    for line_curves in road_curves:
+        prev_curve = line_curves[0]
+        for current_curve in line_curves[1:]:
+            try:
+                if distance(prev_curve.to_polygon(), current_curve.to_polygon()) > max_distance:
+                    continue
+                if (prev_curve.net_angle() > 0 and current_curve.net_angle() > 0) or (prev_curve.net_angle() < 0 and current_curve.net_angle() < 0):
+                    combined_polygon = combine_polygons(prev_curve.to_polygon(), current_curve.to_polygon())
+                    problem_regions.append(combined_polygon)
 
-        except Exception as ex:
-            raise ex
-        finally:
-            prev_curve = current_curve
+            except Exception as ex:
+                raise ex
+            finally:
+                prev_curve = current_curve
 
     return problem_regions
 
-def combine_polygons(polygon1:Polygon, polygon2:Polygon)-> Polygon:
-    min_x = polygon1.boundary.coords[0][0]
-    min_y = polygon1.boundary.coords[0][1]
-    max_x = polygon1.boundary.coords[0][0]
-    max_y = polygon1.boundary.coords[0][1]
+def combine_polygons(*polygons:Polygon)-> Polygon:
+    min_x = polygons[0].boundary.coords[0][0]
+    min_y = polygons[0].boundary.coords[0][1]
+    max_x = polygons[0].boundary.coords[0][0]
+    max_y = polygons[0].boundary.coords[0][1]
 
-    for point in polygon1.boundary.coords[1:] + list(polygon2.boundary.coords):
-        if point[0] < min_x:
-            min_x = point[0]
-        elif point[0] > max_x:
-            max_x = point[0]
+    for polygon in polygons[1:]:
+        for point in polygon.boundary.coords[1:]:
+            if point[0] < min_x:
+                min_x = point[0]
+            elif point[0] > max_x:
+                max_x = point[0]
 
-        if point[1] < min_y:
-            min_y = point[1]
-        elif point[1] > max_y:
-            max_y = point[1]
+            if point[1] < min_y:
+                min_y = point[1]
+            elif point[1] > max_y:
+                max_y = point[1]
 
     polygon = Polygon([(min_x, min_y), (min_x, max_y), (max_x, max_y), (max_x, min_y), (min_x, min_y)])
     return polygon

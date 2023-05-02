@@ -49,8 +49,9 @@ class DatasetAccessor:
             index=False,
         )
 
-    def write_curves(self,  shp_db, curves:List[RoadCurve], new_file_path:str) -> None:
+    def write_curves(self,  shp_db, curves:List[List[RoadCurve]], new_file_path:str) -> None:
         polygons = []
-        for curve in curves:
-            polygons.append(curve.to_polygon())
-        self.write_polygons(shp_db, polygons, new_file_path)
+        for line_curves in curves:
+            for curve in line_curves:
+                polygons.append(curve.to_polygon())
+            self.write_polygons(shp_db, polygons, new_file_path)
