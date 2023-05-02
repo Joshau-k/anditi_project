@@ -17,7 +17,7 @@ def find_line_gaps(lines: List[LineString]) -> List[LineString]:
 
     return gaps
 
-def find_curves(lines: List[LineString], min_angle_degrees=10) -> List[List['RoadCurve']]:
+def find_curves(lines: List[LineString]) -> List[List['RoadCurve']]:
     '''
         1.coordinate_scale 
         2.How to measure curviness
@@ -26,9 +26,10 @@ def find_curves(lines: List[LineString], min_angle_degrees=10) -> List[List['Roa
         3.parameter for how much curviness is a problem
         4. What format to return result
     '''
-
-    # problem_regions:List[Polygon] = []
     all_lines_curves:List[List[RoadCurve]] = []
+
+    min_segment_angle_degrees = 1
+    min_total_angle_degrees = 30
 
 
     point1 = None
@@ -36,7 +37,6 @@ def find_curves(lines: List[LineString], min_angle_degrees=10) -> List[List['Roa
     for line in lines:
         line_curves:List[RoadCurve] = []
         current_curve:RoadCurve = None
-
         for point3 in line.coords:
             try:
                 if point1 is None or point2 is None or point3 is None:
@@ -44,24 +44,25 @@ def find_curves(lines: List[LineString], min_angle_degrees=10) -> List[List['Roa
 
                 azimuth_deg1 = 360 + math.degrees(math.atan2((point1[0] - point2[0]),(point1[1] - point2[1])))
                 azimuth_deg2 = 360 + math.degrees(math.atan2((point2[0] - point3[0]),(point2[1] - point3[1])))
-                # direction1 = (point1[0] - point2[0])/(point1[1] - point2[1])
-                # direction2 = (point2[0] - point3[0])/(point2[1] - point3[1])
 
                 change_degrees = abs(azimuth_deg1-azimuth_deg2)
 
-                if change_degrees > min_angle_degrees:
+                if change_degrees > min_segment_angle_degrees:
                     if current_curve is None:
                         current_curve = RoadCurve([point1, point2, point3])
-                        line_curves.append(current_curve)
                     else:
-                        if current_curve.does_point_fit_curve(point3, min_angle_degrees):
+                        if current_curve.does_point_fit_curve(point3, min_segment_angle_degrees):
                             #Extend existing curve
                             current_curve.extend(point3)
                         else:
+                            if abs(current_curve.net_angle()) > min_total_angle_degrees:
+                                line_curves.append(current_curve)
+
                             #Start new curve
                             current_curve = RoadCurve([point1, point2, point3])
-                            line_curves.append(current_curve)
                 else:
+                    if current_curve and abs(current_curve.net_angle()) > min_total_angle_degrees:
+                        line_curves.append(current_curve)
                     current_curve = None
 
                         
@@ -72,6 +73,8 @@ def find_curves(lines: List[LineString], min_angle_degrees=10) -> List[List['Roa
                 point2 = point3
         point1 = None
         point2 = None
+        if current_curve and abs(current_curve.net_angle()) > min_total_angle_degrees:
+            line_curves.append(current_curve)
         if line_curves:
             all_lines_curves.append(line_curves)
 
