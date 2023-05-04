@@ -1,6 +1,7 @@
 
 import geopandas as gpd
 from dataset_accessor import DatasetAccessor
+from geo_tiff import GeoTiff
 
 from road_boundary_functions import find_curves, find_line_gaps, find_nearby_opposite_angle_curves, find_nearby_same_angle_curves, find_pos_neg_neg_pos_curve_sequence
 
