@@ -2,6 +2,8 @@ from typing import List, Tuple
 from shapely import LineString, Polygon, Point, distance
 import math
 
+from geo_tiff import GeoTiff, find_geo_tiff_for_point
+
 
 def find_line_gaps(lines: List[LineString]) -> List[LineString]:
     gaps:List[LineString] = []
@@ -150,6 +152,34 @@ def find_nearby_same_angle_curves(road_curves : List['RoadCurve'], max_distance:
 
     return problem_regions
 
+def find_height_change(lines: List[LineString], height_files: List[GeoTiff]) -> List['RoadCurve']:
+
+    line_curves:List[RoadCurve] = []
+
+    point1 = None
+    for line in lines:
+        for point2 in line.coords:
+            try:
+                local_tiff = find_geo_tiff_for_point(height_files, point2[0], point2[1])
+                if local_tiff is None:
+                    continue
+                height2_metres = local_tiff.get_pixel(point2[0], point2[1])
+                if point1 is None:
+                    continue
+                if height1_metres == -1000 or height2_metres == -1000:
+                    continue
+                if abs(height1_metres - height2_metres) > 0.15:
+                    line_curves.append(RoadCurve([point1, point2]))
+            except Exception as ex:
+                raise ex
+            finally:
+                point1 = point2
+                height1_metres = height2_metres
+        point1 = None
+        height1_metres = None
+    return line_curves
+
+
 def combine_polygons(*polygons:Polygon)-> Polygon:
     min_x = polygons[0].boundary.coords[0][0]
     min_y = polygons[0].boundary.coords[0][1]
@@ -170,6 +200,7 @@ def combine_polygons(*polygons:Polygon)-> Polygon:
 
     polygon = Polygon([(min_x, min_y), (min_x, max_y), (max_x, max_y), (max_x, min_y), (min_x, min_y)])
     return polygon
+
 
 
 class RoadCurve:
