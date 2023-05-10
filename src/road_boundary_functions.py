@@ -152,32 +152,81 @@ def find_nearby_same_angle_curves(road_curves : List['RoadCurve'], max_distance:
 
     return problem_regions
 
+def add_section_if_meets_threshold(all_sections, section, current_height_change, min_avg_height_change, min_total_height_change) -> bool:
+    if section is None:
+        return False
+    if section and abs(current_height_change)/len(section.line.coords) > min_avg_height_change and abs(current_height_change) > min_total_height_change:
+        all_sections.append(section)
+        return True
+    return False
+
 def find_height_change(lines: List[LineString], height_files: List[GeoTiff]) -> List['RoadCurve']:
 
-    line_curves:List[RoadCurve] = []
+    line_sections:List[RoadSection] = []
+
+    min_total_height_change = 1.00
+    min_avg_height_change = 0.05
+    min_step_height_change = 0.01
 
     point1 = None
+    point2 = None
     for line in lines:
-        for point2 in line.coords:
+        current_curve:RoadSection = None
+        current_height_change = 0
+        point_iter = iter(line.coords)
+        point2 = next(point_iter)
+        while point2:
+        # for point2 in line.coords:
             try:
                 local_tiff = find_geo_tiff_for_point(height_files, point2[0], point2[1])
                 if local_tiff is None:
+                    add_section_if_meets_threshold(line_sections, current_curve, current_height_change, min_avg_height_change, min_total_height_change)
+                    current_curve = None
+                    current_height_change = 0
                     continue
                 height2_metres = local_tiff.get_pixel(point2[0], point2[1])
                 if point1 is None:
+                    add_section_if_meets_threshold(line_sections, current_curve, current_height_change, min_avg_height_change, min_total_height_change)
+                    current_curve = None
+                    current_height_change = 0
                     continue
                 if height1_metres == -1000 or height2_metres == -1000:
+                    add_section_if_meets_threshold(line_sections, current_curve, current_height_change, min_avg_height_change, min_total_height_change)
+                    current_curve = None
+                    current_height_change = 0
                     continue
-                if abs(height1_metres - height2_metres) > 0.15:
-                    line_curves.append(RoadCurve([point1, point2]))
+                # line_length = Point(point2[0], point2[1]).distance(Point(point1[0], point1[1]))
+                height_changes = height1_metres - height2_metres
+                if abs(height_changes) > min_step_height_change:
+                    if current_curve is None:
+                        current_curve = RoadCurve([point1, point2])
+                        current_height_change = height_changes
+                    else:
+                        if (current_height_change > 0 and height_changes > 0) or (current_height_change < 0 and height_changes < 0):
+                            current_curve.extend(point2)
+                            current_height_change += height_changes
+                        else:
+                            add_section_if_meets_threshold(line_sections, current_curve, current_height_change, min_avg_height_change, min_total_height_change)
+                            current_curve = RoadCurve([point1, point2])
+                            current_height_change = height_changes
+                else:
+                    add_section_if_meets_threshold(line_sections, current_curve, current_height_change, min_avg_height_change, min_total_height_change)
+                    current_curve = None
+                    current_height_change = 0
+
             except Exception as ex:
                 raise ex
             finally:
                 point1 = point2
                 height1_metres = height2_metres
+                try:
+                    point2 = next(point_iter)
+                except StopIteration:
+                    point2 = None
         point1 = None
         height1_metres = None
-    return line_curves
+        add_section_if_meets_threshold(line_sections, current_curve, current_height_change, min_avg_height_change, min_total_height_change)
+    return line_sections
 
 
 def combine_polygons(*polygons:Polygon)-> Polygon:
@@ -266,7 +315,8 @@ class RoadCurve:
         polygon = Polygon([(min_x, min_y), (min_x, max_y), (max_x, max_y), (max_x, min_y), (min_x, min_y)])
         return polygon
 
-
+class RoadSection(RoadCurve):
+    pass
    
 
 
